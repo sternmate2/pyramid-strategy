@@ -139,6 +139,30 @@ CREATE INDEX IF NOT EXISTS idx_api_usage_timestamp ON api_usage(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_api_usage_status ON api_usage(status_code);
 
 -- =============================================================================
+-- POSITION TRACKING TABLE (for Pyramid Strategy)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS position_tracking (
+    id BIGSERIAL PRIMARY KEY,
+    symbol VARCHAR(20) NOT NULL,
+    price DECIMAL(12,4) NOT NULL,
+    units INTEGER NOT NULL,
+    total_value DECIMAL(12,2) NOT NULL,
+    threshold_level INTEGER NOT NULL,
+    threshold_price DECIMAL(12,4) NOT NULL,
+    position_type VARCHAR(10) NOT NULL CHECK (position_type IN ('BUY', 'SELL')),
+    dollar_amount DECIMAL(12,2) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'SOLD', 'CANCELLED')),
+    is_anchor BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create indexes for position_tracking
+CREATE INDEX IF NOT EXISTS idx_position_tracking_symbol ON position_tracking(symbol);
+CREATE INDEX IF NOT EXISTS idx_position_tracking_status ON position_tracking(status);
+CREATE INDEX IF NOT EXISTS idx_position_tracking_symbol_status ON position_tracking(symbol, status);
+
+-- =============================================================================
 -- ANOMALIES TABLE (For future anomaly detection features)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS anomalies (
@@ -237,6 +261,10 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO stockuser;
 -- Grant usage on views
 GRANT SELECT ON latest_prices TO stockuser;
 GRANT SELECT ON price_changes TO stockuser;
+
+-- Explicitly grant permissions on position_tracking
+GRANT SELECT, INSERT, UPDATE, DELETE ON position_tracking TO stockuser;
+GRANT USAGE, SELECT ON SEQUENCE position_tracking_id_seq TO stockuser;
 
 -- =============================================================================
 -- PERFORMANCE OPTIMIZATIONS
