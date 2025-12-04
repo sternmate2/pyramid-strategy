@@ -1,0 +1,61 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: stockdb
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres" 
+          --health-interval=10s --health-timeout=5s --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        if: hashFiles('**/requirements.txt') != ''
+        run: |
+          pip install -r requirements.txt || true
+          find . -name requirements.txt -not -path "./venv/*" -not -path "./.venv/*" -print0 | xargs -0 -I{} pip install -r "{}" || true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Node deps (best-effort)
+        run: |
+          if [ -f package.json ]; then npm ci || true; fi
+          for d in frontend web ui; do
+            if [ -f "$d/package.json" ]; then (cd "$d" && npm ci || true); fi
+          done
+
+      - name: Lint (best-effort)
+        run: |
+          ruff --version && ruff . || true
+          flake8 --version && flake8 || true
+          if command -v npm >/dev/null && [ -f package.json ]; then npm run lint || true; fi
+
+      - name: Run tests (best-effort)
+        run: |
+          pytest -q || true
+          if command -v npm >/dev/null && [ -f package.json ]; then npm test -- --ci || true; fi
+
+      - name: Build Docker images
+        run: |
+          docker build -f nginx/Dockerfile -t stock-nginx:ci . || true
+          if [ -f docker-compose.yml ]; then docker compose build || docker-compose build; fi

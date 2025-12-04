@@ -1,0 +1,359 @@
+services:
+  # =============================================================================
+  # DATABASE SERVICES
+  # =============================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: stock-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-stock_anomaly}
+      POSTGRES_USER: ${POSTGRES_USER:-stockuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-securepassword123}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=en_US.UTF-8 --lc-ctype=en_US.UTF-8"
+    # ports removed - accessed via internal network only
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    networks:
+      - stock-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-stockuser} -d ${POSTGRES_DB:-stock_anomaly}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: stock-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_secure_password} --appendonly yes
+    # ports removed - accessed via internal network only
+    volumes:
+      - redis_data:/data
+    networks:
+      - stock-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # =============================================================================
+  # APPLICATION SERVICES
+  # =============================================================================
+  price-ingestion:
+    build:
+      context: ./services/price-ingestion
+      dockerfile: Dockerfile
+    container_name: stock-price-ingestion
+    environment:
+      - PYTHONPATH=/app
+      - FINNHUB_API_KEY=d2pl6d9r01qnf9nlijsgd2pl6d9r01qnf9nlijt0
+      - ALPHAVANTAGE_API_KEY=UZSN02XSTPRXBGTF
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_secure_password}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - TRACKED_SYMBOLS=${TRACKED_SYMBOLS:-SPY,QQQ,IWM,BTC/USD}
+      - REALTIME_INTERVAL=${REALTIME_INTERVAL:-1}
+      - MARKET_OPEN_HOUR=${MARKET_OPEN_HOUR:-14}
+      - MARKET_OPEN_MINUTE=${MARKET_OPEN_MINUTE:-30}
+      - MARKET_CLOSE_HOUR=${MARKET_CLOSE_HOUR:-21}
+      - MARKET_CLOSE_MINUTE=${MARKET_CLOSE_MINUTE:-0}
+    # ports removed - accessed via nginx subdomain (ingestion.sads.ai)
+    volumes:
+      - ./services/price-ingestion:/app
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - stock-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  price-api:
+    build:
+      context: ./services/price-api
+      dockerfile: Dockerfile
+    container_name: stock-price-api
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - API_PORT=${API_PORT:-3000}
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_secure_password}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-900000}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-1000}
+      - PRICE_CACHE_TTL=${PRICE_CACHE_TTL:-900}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
+    # ports removed - accessed via nginx subdomain (price-api.sads.ai)
+    volumes:
+      - ./services/price-api/src:/app/src
+      - ./services/price-api/app.js:/app/app.js
+      - ./services/price-api/package.json:/app/package.json
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      price-ingestion:
+        condition: service_started
+    networks:
+      - stock-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  admin-ui:
+    build:
+      context: ./services/admin-ui
+      dockerfile: Dockerfile
+    container_name: stock-admin-ui
+    environment:
+      - NODE_ENV=production
+    # ports removed - accessed via nginx subdomain (admin.sads.ai)
+    depends_on:
+      price-api:
+        condition: service_started
+    networks:
+      - stock-network
+    restart: unless-stopped
+
+  pyramid-strategy:
+    build:
+      context: ./services/pyramid-strategy
+      dockerfile: Dockerfile
+    container_name: stock-pyramid-strategy
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=${PYRAMID_PORT:-3003}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://stockuser:securepassword123@postgres:5432/stock_anomaly}
+      - DB_HOST=${POSTGRES_HOST:-postgres}
+      - DB_PORT=${POSTGRES_PORT:-5432}
+      - DB_NAME=${POSTGRES_DB:-stock_anomaly}
+      - DB_USER=${POSTGRES_USER:-stockuser}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-securepassword123}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_secure_password}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secure_password}@redis:6379
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_FORMAT=json
+      - SERVICE_NAME=pyramid-strategy
+    ports:
+      - "${PYRAMID_PORT:-3003}:3003"
+    volumes:
+      - ./services/pyramid-strategy/src:/app/src
+      - ./services/pyramid-strategy/config:/app/config
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - stock-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/api/v1/pyramid-strategy/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # =============================================================================
+  # REVERSE PROXY
+  # =============================================================================
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: stock-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.dev.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./nginx/public:/usr/share/nginx/html
+      - ./logs:/var/log/nginx
+    depends_on:
+      price-api:
+        condition: service_started
+      admin-ui:
+        condition: service_started
+    networks:
+      - stock-network
+    restart: unless-stopped
+
+  # =============================================================================
+  # MONITORING SERVICES (Optional)
+  # =============================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: stock-prometheus
+    # ports removed - accessed via nginx subdomain (prometheus.sads.ai)
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--storage.tsdb.retention.time=30d'
+      - '--storage.tsdb.retention.size=10GB'
+    networks:
+      - stock-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: stock-grafana
+    # ports removed - accessed via nginx subdomain (grafana.sads.ai)
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+    networks:
+      - stock-network
+    restart: unless-stopped
+
+  # System metrics collector  
+  node-exporter:
+    image: registry.hub.docker.com/prom/node-exporter:latest
+    container_name: stock-node-exporter
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    networks:
+      - stock-network
+    restart: unless-stopped
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+
+  # Redis metrics exporter
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: stock-redis-exporter
+    environment:
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_secure_password}
+    networks:
+      - stock-network
+    restart: unless-stopped
+    depends_on:
+      - redis
+
+  # PostgreSQL metrics exporter
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: stock-postgres-exporter
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER:-stockuser}:${POSTGRES_PASSWORD:-securepassword123}@postgres:5432/${POSTGRES_DB:-stock_anomaly}?sslmode=disable
+    networks:
+      - stock-network
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Nginx metrics exporter
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    container_name: stock-nginx-exporter
+    command:
+      - '-nginx.scrape-uri=http://nginx:80/nginx_status'
+    networks:
+      - stock-network
+    restart: unless-stopped
+    depends_on:
+      - nginx
+
+  # =============================================================================
+  # DEVELOPMENT TOOLS (Comment out for production)
+  # =============================================================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: stock-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@stocksystem.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      SCRIPT_NAME: /
+      PGADMIN_CONFIG_FORCE_SSL: 'False'
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: 'False'
+    # ports removed - accessed via nginx subdomain (pgadmin.sads.ai)
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - stock-network
+    restart: unless-stopped
+    profiles:
+      - dev
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: stock-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379:0:${REDIS_PASSWORD:-redis_secure_password}
+      - HTTP_USER=admin
+      - HTTP_PASSWORD=admin123
+    # ports removed - accessed via nginx subdomain (redis.sads.ai)
+    depends_on:
+      - redis
+    networks:
+      - stock-network
+    restart: unless-stopped
+    profiles:
+      - dev
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  stock-network:
+    driver: bridge
+    name: stock-anomaly-network
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  postgres_data:
+    name: stock-postgres-data
+  redis_data:
+    name: stock-redis-data
+  prometheus_data:
+    name: stock-prometheus-data
+  grafana_data:
+    name: stock-grafana-data
+  pgadmin_data:
+    name: stock-pgadmin-data

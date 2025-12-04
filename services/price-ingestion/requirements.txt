@@ -1,0 +1,40 @@
+# Core Dependencies
+yfinance==0.2.65
+requests==2.31.0
+pandas==2.1.4
+numpy==1.24.3
+
+# Database
+psycopg2-binary==2.9.7
+asyncpg==0.29.0
+redis==5.0.0
+
+# HTTP and Async
+aiohttp==3.9.1
+aiofiles==23.2.1
+
+# Utilities
+python-dotenv==1.0.0
+schedule==1.2.0
+pytz==2023.3
+
+# HTTP Server
+fastapi==0.104.1
+uvicorn==0.24.0
+
+# Logging
+loguru==0.7.2
+
+# Data Validation
+pydantic==2.5.0
+
+# Development Dependencies
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+black==23.11.0
+flake8==6.1.0
+isort==5.12.0
+
+# Monitoring
+prometheus-client==0.19.0

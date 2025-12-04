@@ -1,0 +1,51 @@
+name: CD
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push images
+        run: echo "Building and pushing images step placeholder"
+
+      - name: Set REGISTRY environment variable
+        run: |
+          if [ -n "${{ secrets.REGISTRY }}" ]; then
+            echo "REGISTRY=${{ secrets.REGISTRY }}" >> $GITHUB_ENV
+          else
+            echo "REGISTRY=ghcr.io/${{ github.repository_owner }}" >> $GITHUB_ENV
+          fi
+
+      - name: Tag & push images
+        run: |
+          python3 - <<'PY'
+          import yaml
+          import subprocess
+          import os
+          import sys
+
+          registry = os.environ.get('REGISTRY', '')
+          compose_file = 'docker-compose.yml'
+          # The rest of your python logic goes here
+          PY
+          if command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
+            docker compose up -d
+          else
+            # Fallback to legacy docker-compose if docker compose is not available
+            docker-compose up -d
+          fi

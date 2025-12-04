@@ -1,0 +1,217 @@
+{
+    "name": "Pyramid Strategy Notifications",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "pyramid-notifications",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "id": "webhook-trigger",
+            "name": "Webhook Trigger",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                240,
+                300
+            ],
+            "webhookId": "pyramid-notifications"
+        },
+        {
+            "parameters": {
+                "jsCode": "const notification = $input.first().json;\n\nlet message = '';\nlet emoji = '';\nlet title = '';\n\nswitch(notification.type) {\n  case 'buy':\n    emoji = '🟢';\n    title = 'PYRAMID BUY ALERT!';\n    message = `Symbol: ${notification.symbol}\\nLevel: ${notification.level}\\nPrice: $${notification.price}\\nUnits: ${notification.units}\\nInvestment: $${notification.dollarAmount}${notification.isAnchor ? '\\n⚓ ANCHOR POSITION' : ''}`;\n    break;\n  case 'sell':\n    emoji = '🔴';\n    title = 'PYRAMID SELL ALERT!';\n    message = `Symbol: ${notification.symbol}\\nLevel: ${notification.level}\\nBuy Price: $${notification.buyPrice}\\nSell Price: $${notification.sellPrice}\\nUnits: ${notification.units}\\nProfit: $${notification.profit}`;\n    break;\n  case 'higher_price':\n    emoji = '🚀';\n    title = 'NEW ALL-TIME HIGH!';\n    message = `Symbol: ${notification.symbol}\\nNew High: $${notification.price}\\nPrevious High: $${notification.previousHighest}\\nIncrease: $${notification.priceIncrease} (${notification.percentageIncrease.toFixed(2)}%)\\n\\n🎯 This triggers level recalculation for pyramid strategy`;\n    break;\n  case 'accumulation':\n    emoji = '📦';\n    title = 'PYRAMID ACCUMULATION!';\n    message = `Symbol: ${notification.symbol}\\nLevel: ${notification.level}\\nBuy Price: $${notification.buyPrice}\\nUnits: ${notification.units}\\nValue: $${notification.totalValue}\\n\\n🔒 NEVER SOLD - PERMANENT ACCUMULATION`;\n    break;\n  default:\n    emoji = '📊';\n    title = 'PYRAMID NOTIFICATION';\n    message = JSON.stringify(notification, null, 2);\n}\n\nconst timestamp = new Date(notification.timestamp).toLocaleString();\nconst fullMessage = `${emoji} ${title}\\n\\n${message}\\n\\n⏰ Time: ${timestamp}`;\n\nreturn {\n  json: {\n    message: fullMessage,\n    type: notification.type,\n    symbol: notification.symbol,\n    level: notification.level || null,\n    timestamp: notification.timestamp,\n    original: notification\n  }\n};"
+            },
+            "id": "format-message",
+            "name": "Format Message",
+            "type": "n8n-nodes-base.function",
+            "typeVersion": 1,
+            "position": [
+                460,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict"
+                    },
+                    "conditions": [
+                        {
+                            "id": "buy-condition",
+                            "leftValue": "={{ $json.type }}",
+                            "rightValue": "buy",
+                            "operator": {
+                                "type": "string",
+                                "operation": "equals"
+                            }
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            },
+            "id": "check-type",
+            "name": "Check Type",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [
+                680,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// Add console logging for debugging\nconsole.log('Pyramid Notification Received:', JSON.stringify($input.first().json, null, 2));\n\n// Return the formatted message for display\nreturn $input.first().json;"
+            },
+            "id": "log-notification",
+            "name": "Log Notification",
+            "type": "n8n-nodes-base.function",
+            "typeVersion": 1,
+            "position": [
+                900,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "resource": "message",
+                "operation": "sendMessage",
+                "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+                "text": "={{ $json.message }}",
+                "additionalFields": {
+                    "parse_mode": "Markdown"
+                }
+            },
+            "id": "telegram-bot",
+            "name": "Send to Telegram",
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
+            "position": [
+                900,
+                300
+            ],
+            "credentials": {
+                "telegramApi": {
+                    "id": "telegram-bot-credentials",
+                    "name": "Telegram Bot API"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={{ { \"success\": true, \"message\": \"Notification processed successfully\", \"data\": $json } }}"
+            },
+            "id": "webhook-response",
+            "name": "Webhook Response",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
+            "position": [
+                1120,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "// This is a placeholder for future broker integration\n// For now, just log the notification\nconsole.log('BROKER INTEGRATION PLACEHOLDER:');\nconsole.log('Event Type:', $json.type);\nconsole.log('Symbol:', $json.symbol);\nconsole.log('Level:', $json.level);\nconsole.log('Message:', $json.message);\n\n// In the future, this will call your broker API\n// Example:\n// const brokerResponse = await fetch('https://your-broker-api.com/orders', {\n//   method: 'POST',\n//   headers: { 'Content-Type': 'application/json' },\n//   body: JSON.stringify({\n//     symbol: $json.symbol,\n//     action: $json.type,\n//     level: $json.level,\n//     // ... other broker-specific fields\n//   })\n// });\n\nreturn $json;"
+            },
+            "id": "broker-integration",
+            "name": "Broker Integration (Future)",
+            "type": "n8n-nodes-base.function",
+            "typeVersion": 1,
+            "position": [
+                900,
+                400
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Format Message",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Format Message": {
+            "main": [
+                [
+                    {
+                        "node": "Check Type",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Check Type": {
+            "main": [
+                [
+                    {
+                        "node": "Log Notification",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Send to Telegram",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Log Notification": {
+            "main": [
+                [
+                    {
+                        "node": "Webhook Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Send to Telegram": {
+            "main": [
+                [
+                    {
+                        "node": "Webhook Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Broker Integration (Future)": {
+            "main": [
+                [
+                    {
+                        "node": "Webhook Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "active": false,
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "versionId": "1",
+    "meta": {
+        "templateCredsSetupCompleted": true
+    },
+    "id": "pyramid-strategy-notifications",
+    "tags": []
+}
