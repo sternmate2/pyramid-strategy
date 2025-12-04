@@ -151,8 +151,10 @@ CREATE TABLE IF NOT EXISTS position_tracking (
     threshold_price DECIMAL(12,4) NOT NULL,
     position_type VARCHAR(10) NOT NULL CHECK (position_type IN ('BUY', 'SELL')),
     dollar_amount DECIMAL(12,2) NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'SOLD', 'CANCELLED')),
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'CLOSED', 'CANCELLED')),
     is_anchor BOOLEAN DEFAULT FALSE,
+    closed_price DECIMAL(12,4),
+    closed_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
