@@ -27,7 +27,8 @@ export default function AlertsPage() {
         <div className="font-semibold mb-4">Admin</div>
         <nav className="space-y-2 text-sm">
           <a className="block text-zinc-300 hover:text-white" href="/admin">Dashboard</a>
-          <a className="block text-zinc-300 hover:text-white" href="/admin/alerts">Alerts</a>
+          <a className="block text-zinc-300 hover:text-white" href="/admin/pyramid">Pyramid Strategy</a>
+          <a className="block text-white font-semibold" href="/admin/alerts">Alerts</a>
         </nav>
       </aside>
       <main className="p-6">
