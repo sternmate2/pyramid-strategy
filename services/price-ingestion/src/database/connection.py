@@ -154,15 +154,14 @@ class DatabaseManager:
             
             query = """
             INSERT INTO crypto_prices (
-                symbol, timestamp, market_timestamp, price_usd, closing_price_usd, volume_24h, market_cap_usd,
+                symbol, timestamp, price_usd, volume_24h, market_cap_usd,
                 price_change_24h, price_change_percent_24h, source, metadata, created_at
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
             )
-            ON CONFLICT (symbol, market_timestamp) 
+            ON CONFLICT (symbol, timestamp) 
             DO UPDATE SET
                 price_usd = EXCLUDED.price_usd,
-                closing_price_usd = EXCLUDED.closing_price_usd,
                 volume_24h = EXCLUDED.volume_24h,
                 market_cap_usd = EXCLUDED.market_cap_usd,
                 price_change_24h = EXCLUDED.price_change_24h,
@@ -177,10 +176,8 @@ class DatabaseManager:
             
             params = [
                 price_data.symbol,
-                price_data.timestamp,  # Keep original timestamp for backward compatibility
-                price_data.timestamp,  # Use the same timestamp as market_timestamp (it's already the market time)
+                price_data.timestamp,
                 price_data.close_price,  # Use close_price as price_usd for crypto
-                price_data.close_price,  # Use close_price as closing_price_usd for crypto
                 price_data.volume,
                 market_cap_usd,
                 price_change_24h,
@@ -264,18 +261,17 @@ class DatabaseManager:
         try:
             query = """
             INSERT INTO daily_prices (
-                symbol, date, market_timestamp, open, high, low, close, closing_price, volume, 
+                symbol, date, open, high, low, close, volume, 
                 source, metadata, created_at, updated_at
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $11
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10
             )
-            ON CONFLICT (symbol, market_timestamp) 
+            ON CONFLICT (symbol, date) 
             DO UPDATE SET
                 open = EXCLUDED.open,
                 high = EXCLUDED.high,
                 low = EXCLUDED.low,
                 close = EXCLUDED.close,
-                closing_price = EXCLUDED.closing_price,
                 volume = EXCLUDED.volume,
                 source = EXCLUDED.source,
                 metadata = EXCLUDED.metadata,
@@ -287,8 +283,7 @@ class DatabaseManager:
             
             params = [
                 price_data.symbol,
-                price_data.timestamp.date(),  # Keep the date for backward compatibility
-                price_data.timestamp,  # Store the full market timestamp
+                price_data.timestamp.date(),  # Store as date
                 price_data.open_price,
                 price_data.high_price,
                 price_data.low_price,
@@ -515,11 +510,11 @@ class DatabaseManager:
                 logger.debug(f"🔌 Acquired database connection for {symbol} query")
                 
                 query = """
-                SELECT symbol, date, market_timestamp, open, high, low, close, volume, 
+                SELECT symbol, date, open, high, low, close, volume, 
                        source, metadata, created_at
                 FROM daily_prices 
                 WHERE symbol = $1 
-                ORDER BY market_timestamp DESC, created_at DESC 
+                ORDER BY date DESC, created_at DESC 
                 LIMIT 1
                 """
                 
@@ -529,6 +524,8 @@ class DatabaseManager:
                 
                 if row:
                     logger.debug(f"✅ Found latest price for {symbol}: Close=${row['close']}, Date={row['date']}")
+                    # Convert date to datetime for timestamp field
+                    timestamp = datetime.combine(row['date'], datetime.min.time()) if row['date'] else row['created_at']
                     return PriceData(
                         symbol=row['symbol'],
                         open_price=row['open'],
@@ -536,7 +533,7 @@ class DatabaseManager:
                         low_price=row['low'],
                         close_price=row['close'],
                         volume=row['volume'],
-                        timestamp=row['market_timestamp'],  # Use the actual market timestamp
+                        timestamp=timestamp,
                         source=row['source'],
                         metadata=row['metadata']
                     )
@@ -570,11 +567,11 @@ class DatabaseManager:
                 logger.debug(f"🔌 Acquired database connection for {symbol} historical query")
                 
                 query = """
-                SELECT symbol, date, market_timestamp, open, high, low, close, volume, 
+                SELECT symbol, date, open, high, low, close, volume, 
                        source, metadata, created_at
                 FROM daily_prices 
-                WHERE symbol = $1 AND market_timestamp >= CURRENT_TIMESTAMP - INTERVAL '%s days'
-                ORDER BY market_timestamp ASC
+                WHERE symbol = $1 AND date >= CURRENT_DATE - INTERVAL '%s days'
+                ORDER BY date ASC
                 """ % days
                 
                 logger.debug(f"📝 Executing historical query for {symbol}: {query}")
@@ -585,6 +582,8 @@ class DatabaseManager:
                 historical_data = []
                 for i, row in enumerate(rows):
                     try:
+                        # Convert date to datetime for timestamp field
+                        timestamp = datetime.combine(row['date'], datetime.min.time()) if row['date'] else row['created_at']
                         price_data = PriceData(
                             symbol=row['symbol'],
                             open_price=row['open'],
@@ -592,7 +591,7 @@ class DatabaseManager:
                             low_price=row['low'],
                             close_price=row['close'],
                             volume=row['volume'],
-                            timestamp=row['market_timestamp'],  # Use the actual market timestamp
+                            timestamp=timestamp,
                             source=row['source'],
                             metadata=row['metadata']
                         )
@@ -674,8 +673,8 @@ class DatabaseManager:
                 # Check if we have enough recent data
                 query = """
                 SELECT COUNT(*) as count, 
-                       MIN(market_timestamp) as earliest_date,
-                       MAX(market_timestamp) as latest_date
+                       MIN(date) as earliest_date,
+                       MAX(date) as latest_date
                 FROM daily_prices 
                 WHERE symbol = $1
                 """
