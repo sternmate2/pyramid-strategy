@@ -157,8 +157,8 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - LOG_FORMAT=json
       - SERVICE_NAME=pyramid-strategy
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - TELEGRAM_BOT_TOKEN=8443900967:AAGQ0mz9_iPTslMpCgXHrNle5TECQcxdgX4
+      - TELEGRAM_CHAT_ID=6402667076
     ports:
       - "${PYRAMID_PORT:-3003}:3003"
     volumes:
