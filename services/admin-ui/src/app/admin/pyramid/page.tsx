@@ -37,30 +37,10 @@ type StrategyStatus = {
   buyCounts: Record<string, number>
 }
 
-async function fetchLatestPrice(): Promise<number | null> {
-  try {
-    const res = await fetch('http://192.168.1.195:3001/api/stock-prices/SPXL/latest')
-    if (!res.ok) return null
-    const json = await res.json()
-    return json.data?.close || null
-  } catch {
-    return null
-  }
-}
-
 async function fetchPyramidStatus(): Promise<StrategyStatus> {
-  const res = await fetch('http://192.168.1.195:3003/api/v1/pyramid-strategy/SPXL/status')
+  const res = await fetch('/api/v1/pyramid-strategy/SPXL/status')
   if (!res.ok) throw new Error('Failed to fetch')
   const json = await res.json()
-  
-  // If lastPrice is null, fetch from database
-  if (!json.data.lastPrice) {
-    const latestPrice = await fetchLatestPrice()
-    if (latestPrice) {
-      json.data.lastPrice = latestPrice
-    }
-  }
-  
   return json.data
 }
 
@@ -106,8 +86,8 @@ export default function PyramidPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <MetricCard 
             title="Current Price" 
-            value={data.lastPrice ? `$${data.lastPrice.toFixed(2)}` : 'N/A'}
-            subtitle={data.lastPrice ? '' : 'Waiting for data'}
+            value={data.lastPrice ? `$${data.lastPrice.toFixed(2)}` : 'Market Closed'}
+            subtitle={data.lastPrice ? 'Real-time' : 'No real-time data available'}
           />
           <MetricCard 
             title="Highest Price" 
