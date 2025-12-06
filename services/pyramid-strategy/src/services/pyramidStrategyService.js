@@ -3,6 +3,7 @@ const LevelService = require('./levelService')
 const PositionService = require('./positionService')
 const logger = require('../utils/logger')
 const config = require('../config')
+const telegramNotifier = require('../utils/telegramNotifier')
 
 class PyramidStrategyService {
     constructor() {
@@ -384,7 +385,15 @@ class PyramidStrategyService {
                 console.log(`🚀 HIGHER PRICE NOTIFICATION: ${symbol} reached new high of $${price.toFixed(2)}`)
                 console.log(`📈 Previous high: $${previousHighest.toFixed(2)} | Increase: $${priceIncrease.toFixed(2)} (${percentageIncrease.toFixed(2)}%)`)
 
-                // Send webhook notification to n8n
+                // Send Telegram notification (fire-and-forget to avoid blocking)
+                telegramNotifier.notifyHigherPrice({
+                    symbol: symbol.toUpperCase(),
+                    price,
+                    previousHighest,
+                    percentageIncrease
+                }).catch(e => logger.error('Telegram higher price notification failed', { error: e.message }))
+
+                // Send webhook notification to n8n (optional - can be removed)
                 await this.sendHigherPriceWebhook(notification)
 
             }
@@ -473,6 +482,18 @@ class PyramidStrategyService {
             } else if (sellTriggerPrice) {
                 console.log(`🎯 Sell trigger: $${sellTriggerPrice.toFixed(2)} (14¢ below Level ${buyLevel.level} above)`)
             }
+
+            // Send Telegram notification (fire-and-forget to avoid blocking)
+            telegramNotifier.notifyBuy({
+                symbol,
+                level: buyLevel.level,
+                price,
+                units,
+                dollarAmount,
+                sellTriggerPrice,
+                isRebuy: buyLevel.isRebuy,
+                isAnchor
+            }).catch(e => logger.error('Telegram buy notification failed', { error: e.message }))
         }
 
         // Set anchor level to the deepest level that was triggered (highest level number)
@@ -586,6 +607,17 @@ class PyramidStrategyService {
                 console.log(`🎯 Keeping ${unitsKept} units (value: ${(unitsKept * price).toFixed(2)}) for accumulation`)
             }
             console.log(`📈 Profit: ${profit.toFixed(2)}`)
+
+            // Send Telegram notification (fire-and-forget to avoid blocking)
+            telegramNotifier.notifySell({
+                symbol,
+                level: position.threshold_level,
+                buyPrice: Number(position.price),
+                sellPrice: price,
+                unitsSold,
+                unitsKept,
+                profit
+            }).catch(e => logger.error('Telegram sell notification failed', { error: e.message }))
         }
     }
 
@@ -624,7 +656,7 @@ class PyramidStrategyService {
                 LIMIT 1
             `
             const result = await query(queryText, [symbol])
-            
+
             if (result.rows.length > 0) {
                 return {
                     price: Number(result.rows[0].price),
