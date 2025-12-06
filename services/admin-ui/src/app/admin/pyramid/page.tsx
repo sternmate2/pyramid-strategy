@@ -6,6 +6,9 @@ type StrategyStatus = {
   symbol: string
   highestPrice: number
   lastPrice: number | null
+  latestDbPrice: number | null
+  latestDbTimestamp: string | null
+  latestDbSource: string | null
   levels: {
     levelsBelow: Record<string, { level: number; price: number; percentage: number }>
     levelsAbove: Record<string, { level: number; price: number; percentage: number }>
@@ -83,11 +86,18 @@ export default function PyramidPage() {
         </div>
 
         {/* Key Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <MetricCard 
             title="Current Price" 
             value={data.lastPrice ? `$${data.lastPrice.toFixed(2)}` : 'Market Closed'}
-            subtitle={data.lastPrice ? 'Real-time' : 'No real-time data available'}
+            subtitle={data.lastPrice ? 'Real-time' : 'No real-time data'}
+          />
+          <MetricCard 
+            title="Latest DB Price" 
+            value={data.latestDbPrice ? `$${data.latestDbPrice.toFixed(2)}` : 'N/A'}
+            subtitle={data.latestDbPrice ? (
+              `${data.latestDbSource === 'daily' ? '📊 Daily' : '⏰ Intraday'} ${data.latestDbTimestamp ? new Date(data.latestDbTimestamp).toLocaleDateString() : ''}`
+            ) : 'No data'}
           />
           <MetricCard 
             title="Highest Price" 

@@ -594,16 +594,62 @@ class PyramidStrategyService {
      * @param {string} symbol - Stock symbol
      * @returns {object} - Strategy status
      */
+    /**
+     * Get latest price from database (daily or intraday)
+     */
+    async getLatestPriceFromDb(symbol) {
+        try {
+            const queryText = `
+                WITH daily_latest AS (
+                    SELECT close as price, date as timestamp, 'daily' as source
+                    FROM daily_prices 
+                    WHERE symbol = $1
+                    ORDER BY date DESC
+                    LIMIT 1
+                ),
+                intraday_latest AS (
+                    SELECT price, timestamp, 'intraday' as source
+                    FROM intraday_prices 
+                    WHERE symbol = $1
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                )
+                SELECT price, timestamp, source
+                FROM (
+                    SELECT * FROM daily_latest
+                    UNION ALL
+                    SELECT * FROM intraday_latest
+                ) combined
+                ORDER BY timestamp DESC
+                LIMIT 1
+            `
+            const result = await query(queryText, [symbol])
+            
+            if (result.rows.length > 0) {
+                return {
+                    price: Number(result.rows[0].price),
+                    timestamp: result.rows[0].timestamp,
+                    source: result.rows[0].source
+                }
+            }
+            return null
+        } catch (error) {
+            logger.error('Error fetching latest price from database', { error: error.message, symbol })
+            return null
+        }
+    }
+
     async getStrategyStatus(symbol) {
         // Ensure service is initialized
         if (!this.initialized) {
             await this.initialize()
         }
 
-        const [positions, stats, levels] = await Promise.all([
+        const [positions, stats, levels, latestDbPrice] = await Promise.all([
             this.positionService.getPositions(symbol),
             this.positionService.getPositionStats(symbol),
-            this.levelService.getAllLevels()
+            this.levelService.getAllLevels(),
+            this.getLatestPriceFromDb(symbol)
         ])
 
         return {
@@ -614,7 +660,10 @@ class PyramidStrategyService {
             stats,
             levelStates: this.levelService.levelStates,
             buyCounts: this.levelService.buyCounts,
-            lastPrice: this.lastPrices[symbol] || null
+            lastPrice: this.lastPrices[symbol] || null,
+            latestDbPrice: latestDbPrice ? latestDbPrice.price : null,
+            latestDbTimestamp: latestDbPrice ? latestDbPrice.timestamp : null,
+            latestDbSource: latestDbPrice ? latestDbPrice.source : null
         }
     }
 
